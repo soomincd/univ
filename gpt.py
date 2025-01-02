@@ -41,6 +41,8 @@ if "conversation_history" not in st.session_state:
     ]
 if "pending_file_contents" not in st.session_state:
     st.session_state.pending_file_contents = []
+if "pending_file_names" not in st.session_state:
+    st.session_state.pending_file_names = []
 
 def read_pdf(file):
     try:
@@ -62,8 +64,12 @@ if uploaded_files:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
     else:
         st.session_state.pending_file_contents = []
+        st.session_state.pending_file_names = []
         for uploaded_file in uploaded_files:
             try:
+                # 파일 이름 저장
+                st.session_state.pending_file_names.append(uploaded_file.name)
+                
                 if uploaded_file.type == "application/pdf":
                     content = read_pdf(uploaded_file)
                     if content:
@@ -88,15 +94,29 @@ if uploaded_files:
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
-    # 파일 내용이 있다면 대화 기록에 추가
-    if st.session_state.pending_file_contents:
-        for content in st.session_state.pending_file_contents:
-            st.session_state.conversation_history.append({"role": "user", "content": content})
-        st.session_state.pending_file_contents = []  # 처리 후 초기화
-
     # 사용자 메시지 추가
     if prompt:  # 실제 메시지가 있는 경우만 표시
         st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # 파일 내용이 있다면 대화 기록에 추가
+    if st.session_state.pending_file_contents:
+        # 파일 첨부 메시지를 사용자 메시지 아래에 표시
+        file_list = [f"📎 {name}" for name in st.session_state.pending_file_names]
+        st.session_state.messages.append({
+            "role": "user",
+            "content": "\n".join(file_list),
+            "type": "file_list"
+        })
+        
+        # 파일 내용 처리
+        for content in st.session_state.pending_file_contents:
+            st.session_state.conversation_history.append({"role": "user", "content": content})
+        
+        # 파일 관련 상태 초기화
+        st.session_state.pending_file_contents = []
+        st.session_state.pending_file_names = []
+        st.experimental_rerun()
+
     st.session_state.conversation_history.append({"role": "user", "content": prompt if prompt else "파일을 분석해주세요."})
 
     # OpenAI API 요청
@@ -148,5 +168,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message.get("type") == "image":
             st.image(message["content"])
+        elif message.get("type") == "file_list":
+            st.markdown(message["content"])
         else:
             st.markdown(message["content"])
