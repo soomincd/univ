@@ -5,6 +5,7 @@ import pandas as pd
 import io
 from base64 import b64decode
 import re
+import PyPDF2
 
 # API 클라이언트 설정
 if "OPENAI_API_KEY" not in st.session_state:
@@ -43,6 +44,17 @@ if "pending_file_contents" not in st.session_state:
 if "pending_file_names" not in st.session_state:
     st.session_state.pending_file_names = []
 
+def read_pdf(file):
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        st.error(f"PDF 파일 처리 중 오류가 발생했습니다: {str(e)}")
+        return None
+
 # 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader("파일 업로드", type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"], accept_multiple_files=True)
 
@@ -53,33 +65,50 @@ if uploaded_files:
     else:
         st.session_state.pending_file_contents = []
         st.session_state.pending_file_names = []
+        all_files_processed = True  # 모든 파일이 성공적으로 처리되었는지 확인하는 플래그
+
         for uploaded_file in uploaded_files:
             try:
                 # 파일 이름 저장
-                st.session_state.pending_file_names.append(uploaded_file.name)
+                file_processed = False  # 현재 파일이 성공적으로 처리되었는지 확인하는 플래그
                 
                 if uploaded_file.type == "application/pdf":
-                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                    text = ""
-                    for page in pdf_reader.pages:
-                        text += page.extract_text() + "\n"
-                    if text:
-                        st.session_state.pending_file_contents.append(f"[PDF 내용]\n{text}")
+                    content = read_pdf(uploaded_file)
+                    if content:
+                        st.session_state.pending_file_contents.append(f"[PDF 내용]\n{content}")
+                        st.session_state.pending_file_names.append(uploaded_file.name)
+                        file_processed = True
                 elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                     df = pd.read_excel(uploaded_file)
                     content = df.to_csv(index=False)
                     st.session_state.pending_file_contents.append(f"[엑셀 내용]\n{content}")
+                    st.session_state.pending_file_names.append(uploaded_file.name)
+                    file_processed = True
                 elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
                     st.session_state.pending_file_contents.append("PPT 파일이 업로드되었습니다.")
+                    st.session_state.pending_file_names.append(uploaded_file.name)
+                    file_processed = True
                 elif uploaded_file.type == "image/png":
                     st.session_state.pending_file_contents.append("PNG 파일이 업로드되었습니다.")
+                    st.session_state.pending_file_names.append(uploaded_file.name)
+                    file_processed = True
                 elif uploaded_file.type == "text/plain":
                     content = uploaded_file.read().decode('utf-8')
                     st.session_state.pending_file_contents.append(f"[텍스트 내용]\n{content}")
+                    st.session_state.pending_file_names.append(uploaded_file.name)
+                    file_processed = True
+
+                if not file_processed:
+                    all_files_processed = False
+                
             except Exception as e:
-                st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
+                st.error(f"{uploaded_file.name} 파일 처리 중 오류가 발생했습니다: {str(e)}")
+                all_files_processed = False
         
-        st.success("파일이 준비되었습니다. 메시지를 입력하거나 엔터를 눌러주세요.")
+        if all_files_processed and st.session_state.pending_file_contents:
+            st.success("파일이 준비되었습니다. 메시지를 입력하거나 엔터를 눌러주세요.")
+        elif not all_files_processed:
+            st.error("일부 파일이 처리되지 않았습니다. 다시 시도해주세요.")
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
