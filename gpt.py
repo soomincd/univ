@@ -5,10 +5,18 @@ import pandas as pd
 import io
 from base64 import b64decode
 import re
+import PyPDF2
 
 # API 클라이언트 설정
-api_key = st.secrets["OPENAI_API_KEY"]
-client = OpenAI(api_key=api_key)
+if "OPENAI_API_KEY" not in st.session_state:
+    st.session_state.OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
+
+if not st.session_state.OPENAI_API_KEY:
+    st.session_state.OPENAI_API_KEY = st.text_input("OpenAI API 키를 입력하세요:", type="password")
+    if not st.session_state.OPENAI_API_KEY:
+        st.stop()
+
+client = OpenAI(api_key=st.session_state.OPENAI_API_KEY)
 
 # 페이지 설정
 st.set_page_config(
@@ -31,49 +39,65 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
+if "pending_file_contents" not in st.session_state:
+    st.session_state.pending_file_contents = []
+
+def read_pdf(file):
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        st.error(f"PDF 파일 처리 중 오류가 발생했습니다: {str(e)}")
+        return None
 
 # 파일 업로드 및 처리
 uploaded_files = st.file_uploader("파일 업로드", type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"], accept_multiple_files=True)
 
-# 파일 내용 처리
+# 파일 내용 처리 및 임시 저장
 if uploaded_files:
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
     else:
-        st.session_state.file_contents = []
+        st.session_state.pending_file_contents = []
         for uploaded_file in uploaded_files:
-            if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                try:
+            try:
+                if uploaded_file.type == "application/pdf":
+                    content = read_pdf(uploaded_file)
+                    if content:
+                        st.session_state.pending_file_contents.append(f"[PDF 내용]\n{content}")
+                elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                     df = pd.read_excel(uploaded_file)
-                    file_content = df.to_csv(index=False)
-                    st.session_state.file_contents.append(file_content)
-                    st.session_state.conversation_history.append(
-                        {"role": "user", "content": f"[File Content]\n{file_content}"}
-                    )
-                except Exception as e:
-                    st.error(f"엑셀 파일 처리 중 오류가 발생했습니다: {str(e)}")
-            elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
-                content = "PPT file has been uploaded."
-                st.session_state.file_contents.append(content)
-                st.session_state.conversation_history.append(
-                    {"role": "user", "content": content}
-                )
-            elif uploaded_file.type == "image/png":
-                content = "PNG file has been uploaded."
-                st.session_state.file_contents.append(content)
-                st.session_state.conversation_history.append(
-                    {"role": "user", "content": content}
-                )
+                    content = df.to_csv(index=False)
+                    st.session_state.pending_file_contents.append(f"[엑셀 내용]\n{content}")
+                elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
+                    st.session_state.pending_file_contents.append("PPT 파일이 업로드되었습니다.")
+                elif uploaded_file.type == "image/png":
+                    st.session_state.pending_file_contents.append("PNG 파일이 업로드되었습니다.")
+                elif uploaded_file.type == "text/plain":
+                    content = uploaded_file.read().decode('utf-8')
+                    st.session_state.pending_file_contents.append(f"[텍스트 내용]\n{content}")
+            except Exception as e:
+                st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
         
-        st.success("파일 업로드가 완료되었습니다.")
+        st.success("파일이 준비되었습니다. 메시지를 입력하거나 엔터를 눌러주세요.")
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
-if prompt:
-    # 사용자 메시지를 대화 기록에 추가
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.conversation_history.append({"role": "user", "content": prompt})
+if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
+    # 파일 내용이 있다면 대화 기록에 추가
+    if st.session_state.pending_file_contents:
+        for content in st.session_state.pending_file_contents:
+            st.session_state.conversation_history.append({"role": "user", "content": content})
+        st.session_state.pending_file_contents = []  # 처리 후 초기화
+
+    # 사용자 메시지 추가
+    if prompt:  # 실제 메시지가 있는 경우만 표시
+        st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.conversation_history.append({"role": "user", "content": prompt if prompt else "파일을 분석해주세요."})
 
     # OpenAI API 요청
     try:
