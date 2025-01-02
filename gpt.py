@@ -5,6 +5,7 @@ import pandas as pd
 import io
 from base64 import b64decode
 import re
+import PyPDF2
 
 # API 클라이언트 설정
 if "OPENAI_API_KEY" not in st.session_state:
@@ -43,9 +44,20 @@ if "pending_file_contents" not in st.session_state:
 if "show_file_uploader" not in st.session_state:
     st.session_state.show_file_uploader = True
 
+def read_pdf(file):
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        st.error(f"PDF 파일 처리 중 오류가 발생했습니다: {str(e)}")
+        return None
+
 # 파일 업로드 컴포넌트
 if st.session_state.show_file_uploader:
-    uploaded_files = st.file_uploader("파일 업로드", type=["txt", "xlsx", "xls", "png", "pptx", "ppt"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("파일 업로드", type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"], accept_multiple_files=True)
 
     # 파일 내용 처리 및 임시 저장
     if uploaded_files:
@@ -55,7 +67,11 @@ if st.session_state.show_file_uploader:
             st.session_state.pending_file_contents = []
             for uploaded_file in uploaded_files:
                 try:
-                    if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+                    if uploaded_file.type == "application/pdf":
+                        content = read_pdf(uploaded_file)
+                        if content:
+                            st.session_state.pending_file_contents.append(f"[PDF 내용]\n{content}")
+                    elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                         df = pd.read_excel(uploaded_file)
                         content = df.to_csv(index=False)
                         st.session_state.pending_file_contents.append(f"[엑셀 내용]\n{content}")
