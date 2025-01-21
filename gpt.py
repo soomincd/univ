@@ -4,7 +4,6 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
-import openpyxl
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -32,24 +31,30 @@ if "conversation_history" not in st.session_state:
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
 
-# 파일 업로드 영역 스타일링
+# 파일 아이콘 스타일 정의
 st.markdown("""
     <style>
-        .uploadedFile {
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 10px;
-            margin: 5px 0;
+        .file-icon {
+            display: inline-flex;
+            align-items: center;
+            background-color: #f0f2f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px 0;
         }
-        .stMarkdown p {
-            font-size: 14px;
-            margin-bottom: 0px;
+        .file-icon i {
+            margin-right: 6px;
+        }
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        .file-list {
+            margin-top: 8px;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# 파일 업로드 섹션
-st.write("파일 업로드")
+# 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader(
     "Drag and drop files here",
     type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
@@ -62,69 +67,95 @@ if uploaded_files:
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
     else:
+        success_files = []
+        failed_files = []
         file_contents = []
+        
         for uploaded_file in uploaded_files:
             try:
-                # 파일 크기 체크 (200MB 제한)
-                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB in bytes
-                    st.error(f"파일 '{uploaded_file.name}'이 200MB 제한을 초과했습니다.")
+                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
+                    failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
                     continue
 
                 if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                    # 엑셀 파일 처리 - openpyxl 엔진 명시적 사용
-                    try:
-                        df = pd.read_excel(uploaded_file, engine='openpyxl')
-                        content = df.to_csv(index=False)
-                        file_contents.append(f"[엑셀 파일: {uploaded_file.name}]\n{content}")
-                        st.success(f"엑셀 파일 '{uploaded_file.name}' 처리 완료")
-                    except Exception as excel_error:
-                        st.error(f"엑셀 파일 처리 중 오류 발생: {str(excel_error)}")
-                        continue
-                        
+                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    content = df.to_csv(index=False)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "excel",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
                 elif uploaded_file.type == "image/png":
-                    # PNG 파일 처리 - 실제 이미지 표시
-                    try:
-                        image = Image.open(uploaded_file)
-                        st.image(image, caption=uploaded_file.name)
-                        file_contents.append(f"[이미지 설명: {uploaded_file.name}이 채팅에 표시되었습니다.]")
-                        st.success(f"이미지 '{uploaded_file.name}' 처리 완료")
-                    except Exception as img_error:
-                        st.error(f"이미지 처리 중 오류 발생: {str(img_error)}")
-                        continue
-
+                    image = Image.open(uploaded_file)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "image",
+                        "content": "이미지 파일이 처리되었습니다."
+                    })
+                    success_files.append(uploaded_file.name)
+                    
                 elif uploaded_file.type == "text/plain":
                     content = uploaded_file.read().decode('utf-8')
-                    file_contents.append(f"[텍스트 파일: {uploaded_file.name}]\n{content}")
-                    st.success(f"텍스트 파일 '{uploaded_file.name}' 처리 완료")
-
-                elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
-                    file_contents.append(f"[PPT 파일: {uploaded_file.name}이 업로드되었습니다.]")
-                    st.success(f"PPT 파일 '{uploaded_file.name}' 확인")
-
-                elif uploaded_file.type == "application/pdf":
-                    file_contents.append(f"[PDF 파일: {uploaded_file.name}이 업로드되었습니다.]")
-                    st.success(f"PDF 파일 '{uploaded_file.name}' 확인")
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "text",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                else:
+                    success_files.append(uploaded_file.name)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "other",
+                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
+                    })
 
             except Exception as e:
-                st.error(f"파일 '{uploaded_file.name}' 처리 중 오류가 발생했습니다: {str(e)}")
-                continue
+                failed_files.append((uploaded_file.name, str(e)))
 
+        # 결과 메시지 표시
+        if failed_files:
+            st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
+        if success_files:
+            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
+
+        # 파일 내용을 conversation history에 추가
         if file_contents:
-            combined_content = "\n\n".join(file_contents)
-            st.session_state.conversation_history.append({
-                "role": "user", 
-                "content": f"다음은 업로드된 파일들의 내용입니다:\n\n{combined_content}"
-            })
-            st.success("모든 파일 업로드가 완료되었습니다.")
+            files_markdown = "\n".join([
+                f"📎 {file['name']}" for file in file_contents
+            ])
+            st.session_state.file_contents = file_contents
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 사용자 메시지를 화면과 대화 기록에 추가
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.conversation_history.append({"role": "user", "content": prompt})
+    # 메시지와 파일 정보를 함께 표시
+    file_info = ""
+    if st.session_state.file_contents:
+        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
+        file_info = "\n".join(files_list)
+        display_message = f"{prompt}\n\n{file_info}"
+    else:
+        display_message = prompt
 
+    st.session_state.messages.append({"role": "user", "content": display_message})
+    
+    # OpenAI에 보낼 메시지 준비
+    if st.session_state.file_contents:
+        combined_content = "\n\n".join([
+            f"[파일: {file['name']}]\n{file['content']}"
+            for file in st.session_state.file_contents
+        ])
+        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
+    else:
+        full_prompt = prompt
+
+    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
+    
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
@@ -144,7 +175,6 @@ if prompt:
                 n=1,
             )
             
-            # 이미지 URL을 메시지에 추가
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": image_response.data[0].url,
@@ -152,7 +182,6 @@ if prompt:
             })
             
         elif generated_response.startswith('[1]'):
-            # [1] 제거 후 텍스트 응답 추가
             clean_response = generated_response[3:].strip()
             st.session_state.messages.append({
                 "role": "assistant",
@@ -160,11 +189,13 @@ if prompt:
                 "type": "text"
             })
         
-        # 전체 응답을 대화 기록에 저장
         st.session_state.conversation_history.append({
             "role": "assistant",
             "content": generated_response
         })
+        
+        # 파일 내용 초기화
+        st.session_state.file_contents = []
         
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
