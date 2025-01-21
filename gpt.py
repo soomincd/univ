@@ -4,7 +4,6 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
-import time
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -31,8 +30,29 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
-if "show_file_info" not in st.session_state:
-    st.session_state.show_file_info = True
+
+# 파일 아이콘 스타일 정의
+st.markdown("""
+    <style>
+        .file-icon {
+            display: inline-flex;
+            align-items: center;
+            background-color: #f0f2f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px 0;
+        }
+        .file-icon i {
+            margin-right: 6px;
+        }
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        .file-list {
+            margin-top: 8px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader(
@@ -46,96 +66,73 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
-        time.sleep(2)
-        st.rerun()
     else:
         success_files = []
         failed_files = []
         file_contents = []
         
-        # 임시 처리 메시지
-        with st.spinner('파일 처리 중...'):
-            for uploaded_file in uploaded_files:
-                try:
-                    if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
-                        failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
-                        continue
+        for uploaded_file in uploaded_files:
+            try:
+                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
+                    failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
+                    continue
 
-                    if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                        df = pd.read_excel(uploaded_file, engine='openpyxl')
-                        content = df.to_csv(index=False)
-                        file_contents.append({
-                            "name": uploaded_file.name,
-                            "type": "excel",
-                            "content": content
-                        })
-                        success_files.append(uploaded_file.name)
-                        
-                    elif uploaded_file.type == "image/png":
-                        image = Image.open(uploaded_file)
-                        file_contents.append({
-                            "name": uploaded_file.name,
-                            "type": "image",
-                            "content": "이미지 파일이 처리되었습니다."
-                        })
-                        success_files.append(uploaded_file.name)
-                        
-                    elif uploaded_file.type == "text/plain":
-                        content = uploaded_file.read().decode('utf-8')
-                        file_contents.append({
-                            "name": uploaded_file.name,
-                            "type": "text",
-                            "content": content
-                        })
-                        success_files.append(uploaded_file.name)
-                        
-                    else:
-                        success_files.append(uploaded_file.name)
-                        file_contents.append({
-                            "name": uploaded_file.name,
-                            "type": "other",
-                            "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
-                        })
+                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    content = df.to_csv(index=False)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "excel",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "image/png":
+                    image = Image.open(uploaded_file)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "image",
+                        "content": "이미지 파일이 처리되었습니다."
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "text/plain":
+                    content = uploaded_file.read().decode('utf-8')
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "text",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                else:
+                    success_files.append(uploaded_file.name)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "other",
+                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
+                    })
 
-                except Exception as e:
-                    failed_files.append((uploaded_file.name, str(e)))
+            except Exception as e:
+                failed_files.append((uploaded_file.name, str(e)))
 
-        # 임시 결과 메시지 표시
-        placeholder = st.empty()
-        if failed_files and success_files:
-            placeholder.error(f"처리 실패한 파일: {', '.join(name for name, _ in failed_files)}")
-            time.sleep(2)
-            placeholder.empty()
-            placeholder.success(f"처리 완료된 파일: {', '.join(success_files)}")
-            time.sleep(2)
-            placeholder.empty()
-        elif failed_files:
-            placeholder.error(f"모든 파일 처리 실패: {', '.join(name for name, _ in failed_files)}")
-            time.sleep(2)
-            placeholder.empty()
-        elif success_files:
-            placeholder.success("모든 파일이 성공적으로 처리되었습니다.")
-            time.sleep(2)
-            placeholder.empty()
+        # 결과 메시지 표시
+        if failed_files:
+            st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
+        if success_files:
+            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
 
-        # 파일 정보 저장
+        # 파일 내용을 conversation history에 추가
         if file_contents:
+            files_markdown = "\n".join([
+                f"📎 {file['name']}" for file in file_contents
+            ])
             st.session_state.file_contents = file_contents
-
-# 파일 정보 표시 (대화가 없을 때만)
-if st.session_state.show_file_info and st.session_state.file_contents:
-    files_markdown = "\n".join([
-        f"📎 {file['name']}" for file in st.session_state.file_contents
-    ])
-    st.markdown(files_markdown)
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 파일 정보 표시 숨기기
-    st.session_state.show_file_info = False
-    
     # 메시지와 파일 정보를 함께 표시
     file_info = ""
     if st.session_state.file_contents:
@@ -159,6 +156,7 @@ if prompt:
 
     st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
     
+    # OpenAI API 요청
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -166,7 +164,9 @@ if prompt:
         )
         generated_response = response.choices[0].message.content
 
+        # [0]/[1] 응답 처리
         if generated_response.startswith('[0]'):
+            # DALL-E 3로 이미지 생성
             image_response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
@@ -197,7 +197,7 @@ if prompt:
         # 파일 내용 초기화
         st.session_state.file_contents = []
         
-        # 페이지 리프레시
+        # UI 초기화를 위한 페이지 리프레시
         st.rerun()
         
     except Exception as e:
@@ -209,4 +209,4 @@ for message in st.session_state.messages:
         if message.get("type") == "image":
             st.image(message["content"])
         else:
-            st.markdown(message["content"]) 
+            st.markdown(message["content"])
