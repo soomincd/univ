@@ -30,6 +30,8 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
+if "should_rerun" not in st.session_state:
+    st.session_state.should_rerun = False
 
 # 파일 아이콘 스타일 정의
 st.markdown("""
@@ -59,7 +61,8 @@ uploaded_files = st.file_uploader(
     "Drag and drop files here",
     type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
     accept_multiple_files=True,
-    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT"
+    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT",
+    key="file_uploader"
 )
 
 # 파일 처리 로직
@@ -116,18 +119,17 @@ if uploaded_files:
             except Exception as e:
                 failed_files.append((uploaded_file.name, str(e)))
 
-        # 결과 메시지 표시
+        # 파일 내용을 conversation history에 저장
+        if file_contents:
+            st.session_state.file_contents = file_contents
+            
+        # 결과 메시지 표시 후 리프레시 예약
         if failed_files:
             st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
         if success_files:
-            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
-
-        # 파일 내용을 conversation history에 추가
-        if file_contents:
-            files_markdown = "\n".join([
-                f"📎 {file['name']}" for file in file_contents
-            ])
-            st.session_state.file_contents = file_contents
+            st.success(f"파일 업로드가 완료되었습니다.")
+            st.session_state.should_rerun = True
+            st.experimental_rerun()
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
@@ -207,3 +209,8 @@ for message in st.session_state.messages:
             st.image(message["content"])
         else:
             st.markdown(message["content"])
+
+# 리프레시가 예약된 경우 실행
+if st.session_state.should_rerun:
+    st.session_state.should_rerun = False
+    st.experimental_rerun()
