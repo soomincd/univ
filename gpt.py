@@ -30,43 +30,14 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
-if "files_processed" not in st.session_state:
-    st.session_state.files_processed = False
+if "upload_key" not in st.session_state:
+    st.session_state.upload_key = 0
 
-# 파일 아이콘 스타일 정의
-st.markdown("""
-    <style>
-        .file-icon {
-            display: inline-flex;
-            align-items: center;
-            background-color: #f0f2f6;
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin: 2px 0;
-        }
-        .file-icon i {
-            margin-right: 6px;
-        }
-        .chat-message {
-            margin-bottom: 10px;
-        }
-        .file-list {
-            margin-top: 8px;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# 파일 업로드 컴포넌트
-uploaded_files = st.file_uploader(
-    "Drag and drop files here",
-    type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
-    accept_multiple_files=True,
-    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT",
-    key="file_uploader"
-)
-
-def process_files():
+def process_files(uploaded_files):
     """파일 처리 함수"""
+    if not uploaded_files:
+        return False
+        
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
         return False
@@ -128,18 +99,24 @@ def process_files():
         st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
     if success_files:
         st.success("파일 업로드가 완료되었습니다.")
+        # 파일 업로더 키 변경으로 UI 리셋
+        st.session_state.upload_key += 1
         return True
     return False
 
-# 파일 처리
-if uploaded_files and not st.session_state.files_processed:
-    if process_files():
-        st.session_state.files_processed = True
-        st.rerun()
+# 파일 업로드 컴포넌트
+uploaded_files = st.file_uploader(
+    "Drag and drop files here",
+    type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
+    accept_multiple_files=True,
+    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT",
+    key=f"file_uploader_{st.session_state.upload_key}"
+)
 
-# 파일이 처리되었고 새로운 업로드가 없는 경우 초기화
-if not uploaded_files and st.session_state.files_processed:
-    st.session_state.files_processed = False
+# 파일 처리
+if uploaded_files:
+    if process_files(uploaded_files):
+        st.rerun()
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
