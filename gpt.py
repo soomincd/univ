@@ -15,19 +15,32 @@ st.set_page_config(
     page_icon="favicon.png",
 )
 
-# 세션 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "file_contents" not in st.session_state:
-    st.session_state.file_contents = []
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = [
-        {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
-    ]
-
-# 파일 아이콘 스타일 정의
+# CSS 스타일 추가
 st.markdown("""
     <style>
+        .header-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+        .back-link {
+            color: #666 !important;
+            text-decoration: none !important;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .back-link:hover {
+            color: #333 !important;
+        }
+        .title {
+            margin: 0;
+            color: black;
+        }
         .file-icon {
             display: inline-flex;
             align-items: center;
@@ -48,22 +61,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 목록으로 버튼 추가
-st.markdown(f'<a href="http://edmakersmp.dothome.co.kr/kcuemain.php" class="back-button"><i class="fas fa-arrow-left"></i> 목록으로</a>', unsafe_allow_html=True)
-
 # Font Awesome 스크립트 추가
 st.markdown("""
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 """, unsafe_allow_html=True)
 
-# 메인 컨텐츠를 div로 감싸서 여백 추가
-st.markdown('<div class="main-content">', unsafe_allow_html=True)
+# 헤더 컨테이너 (제목과 뒤로가기 버튼)
+st.markdown("""
+    <div class="header-container">
+        <h2 class="title">Chat GPT</h2>
+        <a href="http://edmakersmp.dothome.co.kr/kcuemain.php" class="back-link">
+            <i class="fas fa-arrow-left"></i> 목록으로
+        </a>
+    </div>
+""", unsafe_allow_html=True)
 
 # 페이지 설명
 st.markdown("""
-    <h2 style="color: black; text-align: center;"> Chat GPT </h2>
-    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
+    <p style="text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
+
+# 세션 초기화
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "file_contents" not in st.session_state:
+    st.session_state.file_contents = []
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = [
+        {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
+    ]
 
 # 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader(
