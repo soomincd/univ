@@ -4,6 +4,7 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
+import time
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -34,40 +35,22 @@ if "upload_state" not in st.session_state:
     st.session_state.upload_state = None
 if "show_file_info" not in st.session_state:
     st.session_state.show_file_info = True
-
-# 파일 아이콘 스타일 정의
-st.markdown("""
-    <style>
-        .file-icon {
-            display: inline-flex;
-            align-items: center;
-            background-color: #f0f2f6;
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin: 2px 0;
-        }
-        .file-icon i {
-            margin-right: 6px;
-        }
-        .chat-message {
-            margin-bottom: 10px;
-        }
-        .file-list {
-            margin-top: 8px;
-        }
-    </style>
-""", unsafe_allow_html=True)
+if "current_files" not in st.session_state:
+    st.session_state.current_files = None
 
 # 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader(
     "Drag and drop files here",
     type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
     accept_multiple_files=True,
-    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT"
+    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT",
+    key="file_uploader"
 )
 
 # 파일 처리 로직
-if uploaded_files:
+if uploaded_files and (st.session_state.current_files != [f.name for f in uploaded_files]):
+    st.session_state.current_files = [f.name for f in uploaded_files]
+    
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
     else:
@@ -129,25 +112,24 @@ if uploaded_files:
         elif success_files:
             st.success("모든 파일이 성공적으로 처리되었습니다.")
 
-        # 파일 정보 표시
-        if st.session_state.show_file_info and file_contents:
-            files_markdown = "\n".join([
-                f"📎 {file['name']}" for file in file_contents
-            ])
-            st.markdown(files_markdown)
+        if file_contents:
             st.session_state.file_contents = file_contents
             st.session_state.upload_state = {
                 "success": success_files,
                 "failed": failed_files
             }
 
+# 파일 정보 표시 (대화가 없을 때만)
+if not st.session_state.messages and st.session_state.file_contents:
+    files_markdown = "\n".join([
+        f"📎 {file['name']}" for file in st.session_state.file_contents
+    ])
+    st.markdown(files_markdown)
+
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 파일 정보 표시 숨기기
-    st.session_state.show_file_info = False
-    
     # 메시지와 파일 정보를 함께 표시
     file_info = ""
     if st.session_state.file_contents:
@@ -179,9 +161,7 @@ if prompt:
         )
         generated_response = response.choices[0].message.content
 
-        # [0]/[1] 응답 처리
         if generated_response.startswith('[0]'):
-            # DALL-E 3로 이미지 생성
             image_response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
@@ -209,10 +189,10 @@ if prompt:
             "content": generated_response
         })
         
-        # 파일 내용 초기화
+        # 파일 내용과 상태 초기화
         st.session_state.file_contents = []
-        
-        # 페이지 리프레시
+        st.session_state.upload_state = None
+        st.session_state.current_files = None
         st.rerun()
         
     except Exception as e:
