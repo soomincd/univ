@@ -15,12 +15,6 @@ st.set_page_config(
     page_icon="favicon.png",
 )
 
-# 페이지 설명
-st.markdown("""
-    <h2 style="color: black; text-align: center;"> Chat GPT </h2>
-    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
-""", unsafe_allow_html=True)
-
 # 세션 초기화
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -52,6 +46,23 @@ st.markdown("""
             margin-top: 8px;
         }
     </style>
+""", unsafe_allow_html=True)
+
+# 목록으로 버튼 추가
+st.markdown(f'<a href="http://edmakersmp.dothome.co.kr/kcuemain.php" class="back-button"><i class="fas fa-arrow-left"></i> 목록으로</a>', unsafe_allow_html=True)
+
+# Font Awesome 스크립트 추가
+st.markdown("""
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+""", unsafe_allow_html=True)
+
+# 메인 컨텐츠를 div로 감싸서 여백 추가
+st.markdown('<div class="main-content">', unsafe_allow_html=True)
+
+# 페이지 설명
+st.markdown("""
+    <h2 style="color: black; text-align: center;"> Chat GPT </h2>
+    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
 
 # 파일 업로드 컴포넌트
