@@ -197,9 +197,6 @@ if prompt:
         # 파일 내용 초기화
         st.session_state.file_contents = []
         
-        # UI 초기화를 위한 페이지 리프레시
-        st.rerun()
-        
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
 
