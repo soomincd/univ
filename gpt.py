@@ -3,11 +3,19 @@ import streamlit as st
 from openai import OpenAI
 import pandas as pd
 import io
-from PIL import Image
+from base64 import b64decode
+import re
 
 # API 클라이언트 설정
-api_key = st.secrets["OPENAI_API_KEY"]
-client = OpenAI(api_key=api_key)
+if "OPENAI_API_KEY" not in st.session_state:
+    st.session_state.OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", None)
+
+if not st.session_state.OPENAI_API_KEY:
+    st.session_state.OPENAI_API_KEY = st.text_input("OpenAI API 키를 입력하세요:", type="password")
+    if not st.session_state.OPENAI_API_KEY:
+        st.stop()
+
+client = OpenAI(api_key=st.session_state.OPENAI_API_KEY)
 
 # 페이지 설정
 st.set_page_config(
@@ -18,65 +26,67 @@ st.set_page_config(
 # CSS 스타일 추가
 st.markdown("""
     <style>
+        .container {
+            position: relative;
+            padding-top: 1rem;
+        }
         .header-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 2rem;
+            text-align: center;
+            margin-bottom: 1rem;
             position: relative;
         }
         .back-link {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
             color: #666 !important;
             text-decoration: none !important;
             font-size: 0.9rem;
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            z-index: 1;
         }
         .back-link:hover {
             color: #333 !important;
         }
         .title {
-            margin: 0;
+            margin: 0 auto;
             color: black;
+            display: inline-block;
         }
-        .file-icon {
-            display: inline-flex;
+        .stApp {
+            margin-top: -6rem;
+        }
+        .uploadedFile {
+            display: flex;
             align-items: center;
             background-color: #f0f2f6;
             padding: 4px 8px;
             border-radius: 4px;
             margin: 2px 0;
         }
-        .file-icon i {
-            margin-right: 6px;
-        }
-        .chat-message {
-            margin-bottom: 10px;
-        }
-        .file-list {
-            margin-top: 8px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
-# Font Awesome 스크립트 추가
+# Font Awesome 추가
 st.markdown("""
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 """, unsafe_allow_html=True)
 
 # 헤더 컨테이너 (제목과 뒤로가기 버튼)
 st.markdown("""
-    <div class="header-container">
-        <h2 class="title">Chat GPT</h2>
-        <a href="http://edmakersmp.dothome.co.kr/kcuemain.php" class="back-link">
-            <i class="fas fa-arrow-left"></i> 목록으로
-        </a>
+    <div class="container">
+        <div class="header-container">
+            <a href="http://edmakersmp.dothome.co.kr/kcuemain.php" class="back-link">
+                <i class="fas fa-arrow-left"></i> 목록으로
+            </a>
+            <h2 class="title">Chat GPT</h2>
+        </div>
     </div>
 """, unsafe_allow_html=True)
 
-# 페이지 설명
 st.markdown("""
     <p style="text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
@@ -90,109 +100,60 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
     ]
+if "pending_file_contents" not in st.session_state:
+    st.session_state.pending_file_contents = []
+if "show_file_uploader" not in st.session_state:
+    st.session_state.show_file_uploader = True
 
 # 파일 업로드 컴포넌트
-uploaded_files = st.file_uploader(
-    "Drag and drop files here",
-    type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
-    accept_multiple_files=True,
-    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT"
-)
+if st.session_state.show_file_uploader:
+    uploaded_files = st.file_uploader(
+        "Drag and drop files here",
+        type=["txt", "xlsx", "xls", "png", "pptx", "ppt"],
+        accept_multiple_files=True
+    )
 
-# 파일 처리 로직
-if uploaded_files:
-    if len(uploaded_files) > 10:
-        st.error("최대 10개의 파일을 업로드할 수 있습니다.")
-    else:
-        success_files = []
-        failed_files = []
-        file_contents = []
-        
-        for uploaded_file in uploaded_files:
-            try:
-                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
-                    failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
-                    continue
-
-                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                    df = pd.read_excel(uploaded_file, engine='openpyxl')
-                    content = df.to_csv(index=False)
-                    file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "excel",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "image/png":
-                    image = Image.open(uploaded_file)
-                    file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "image",
-                        "content": "이미지 파일이 처리되었습니다."
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "text/plain":
-                    content = uploaded_file.read().decode('utf-8')
-                    file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "text",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                else:
-                    success_files.append(uploaded_file.name)
-                    file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "other",
-                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
-                    })
-
-            except Exception as e:
-                failed_files.append((uploaded_file.name, str(e)))
-
-        # 결과 메시지 표시
-        if failed_files:
-            st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
-        if success_files:
-            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
-
-        # 파일 내용을 conversation history에 추가
-        if file_contents:
-            files_markdown = "\n".join([
-                f"📎 {file['name']}" for file in file_contents
-            ])
-            st.session_state.file_contents = file_contents
+    # 파일 내용 처리 및 임시 저장
+    if uploaded_files:
+        if len(uploaded_files) > 10:
+            st.error("최대 10개의 파일을 업로드할 수 있습니다.")
+        else:
+            st.session_state.pending_file_contents = []
+            for uploaded_file in uploaded_files:
+                try:
+                    if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+                        df = pd.read_excel(uploaded_file)
+                        content = df.to_csv(index=False)
+                        st.session_state.pending_file_contents.append(f"[엑셀 내용]\n{content}")
+                    elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
+                        st.session_state.pending_file_contents.append("PPT 파일이 업로드되었습니다.")
+                    elif uploaded_file.type == "image/png":
+                        st.session_state.pending_file_contents.append("PNG 파일이 업로드되었습니다.")
+                    elif uploaded_file.type == "text/plain":
+                        content = uploaded_file.read().decode('utf-8')
+                        st.session_state.pending_file_contents.append(f"[텍스트 내용]\n{content}")
+                except Exception as e:
+                    st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
+            
+            st.success("파일이 준비되었습니다. 메시지를 입력하거나 엔터를 눌러주세요.")
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
-if prompt:
-    # 메시지와 파일 정보를 함께 표시
-    file_info = ""
-    if st.session_state.file_contents:
-        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
-        file_info = "\n".join(files_list)
-        display_message = f"{prompt}\n\n{file_info}"
-    else:
-        display_message = prompt
+if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
+    # 파일 내용이 있다면 대화 기록에 추가
+    if st.session_state.pending_file_contents:
+        for content in st.session_state.pending_file_contents:
+            st.session_state.conversation_history.append({"role": "user", "content": content})
+        st.session_state.pending_file_contents = []  # 처리 후 초기화
+        st.session_state.show_file_uploader = False  # 파일 업로더 숨기기
+        st.experimental_rerun()  # UI 새로고침
 
-    st.session_state.messages.append({"role": "user", "content": display_message})
-    
-    # OpenAI에 보낼 메시지 준비
-    if st.session_state.file_contents:
-        combined_content = "\n\n".join([
-            f"[파일: {file['name']}]\n{file['content']}"
-            for file in st.session_state.file_contents
-        ])
-        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
-    else:
-        full_prompt = prompt
+    # 사용자 메시지 추가
+    if prompt:  # 실제 메시지가 있는 경우만 표시
+        st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.conversation_history.append({"role": "user", "content": prompt if prompt else "파일을 분석해주세요."})
 
-    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
-    
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
@@ -201,7 +162,7 @@ if prompt:
         )
         generated_response = response.choices[0].message.content
 
-        # [0]/[1] 응답 처리
+        # [0]/[1] 체크 및 처리
         if generated_response.startswith('[0]'):
             # DALL-E 3로 이미지 생성
             image_response = client.images.generate(
@@ -212,6 +173,7 @@ if prompt:
                 n=1,
             )
             
+            # 이미지 URL을 메시지에 추가
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": image_response.data[0].url,
@@ -219,20 +181,23 @@ if prompt:
             })
             
         elif generated_response.startswith('[1]'):
-            clean_response = generated_response[3:].strip()
+            # [1] 제거 후 텍스트 응답 추가
+            clean_response = generated_response[3:].strip()  # [1]\n 제거
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": clean_response,
                 "type": "text"
             })
-        
+            
+        # conversation_history에는 원본 응답 저장
         st.session_state.conversation_history.append({
             "role": "assistant",
             "content": generated_response
         })
         
-        # 파일 내용 초기화
-        st.session_state.file_contents = []
+        # 응답 후 파일 업로더 다시 표시
+        st.session_state.show_file_uploader = True
+        st.experimental_rerun()
         
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
