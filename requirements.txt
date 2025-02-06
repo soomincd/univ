@@ -1,3 +1,4 @@
+PyMuPDF==1.23.8
 PyPDF2
 altair==5.4.1
 annotated-types==0.7.0
