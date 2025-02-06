@@ -6,7 +6,7 @@ import io
 from PIL import Image
 import base64
 import PyPDF2
-import fitz  # PyMuPDF
+import PyPDF2
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -21,29 +21,17 @@ def encode_image_to_base64(image):
 def extract_text_from_pdf(pdf_file):
     """PDF에서 텍스트 추출"""
     try:
-        # PyMuPDF를 사용하여 PDF 처리
-        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        # PDF 파일을 읽기 모드로 열기
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
         text = ""
-        images = []
         
-        for page_num in range(pdf_document.page_count):
-            page = pdf_document[page_num]
-            text += page.get_text()
+        # 모든 페이지의 텍스트 추출
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
             
-            # 이미지 추출
-            image_list = page.get_images()
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                base_image = pdf_document.extract_image(xref)
-                image_bytes = base_image["image"]
-                
-                # 이미지를 PIL Image로 변환
-                image = Image.open(io.BytesIO(image_bytes))
-                images.append(encode_image_to_base64(image))
-        
         return {
             "text": text,
-            "images": images
+            "images": []  # PyPDF2는 이미지 추출을 지원하지 않습니다
         }
     except Exception as e:
         st.error(f"PDF 처리 중 오류 발생: {str(e)}")
@@ -186,7 +174,7 @@ if prompt:
         
         # GPT API 호출
         response = client.chat.completions.create(
-            model="gpt-4-vision-preview" if use_vision else "gpt-4o-mini",
+            model="gpt-4-vision" if use_vision else "gpt-4o-mini",
             messages=current_messages,
             max_tokens=4096
         )
