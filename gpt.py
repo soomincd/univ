@@ -3,7 +3,7 @@ import streamlit as st
 from openai import OpenAI
 import pandas as pd
 import io
-from base64 import b64decode
+from base64 import b64encode
 import re
 
 # API 클라이언트 설정
@@ -88,7 +88,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("""
-    <p style="text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
+    <p style="text-align: center"> 이 페이지는 ChatGPT-4o버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
 
 # 세션 초기화
@@ -128,7 +128,12 @@ if st.session_state.show_file_uploader:
                     elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-powerpoint"]:
                         st.session_state.pending_file_contents.append("PPT 파일이 업로드되었습니다.")
                     elif uploaded_file.type == "image/png":
-                        st.session_state.pending_file_contents.append("PNG 파일이 업로드되었습니다.")
+                        # 이미지를 base64로 인코딩
+                        bytes_data = uploaded_file.getvalue()
+                        base64_image = b64encode(bytes_data).decode()
+                        st.session_state.pending_file_contents.append(f"[이미지 내용]\ndata:image/png;base64,{base64_image}")
+                        # 이미지 미리보기 표시
+                        st.image(bytes_data, caption="업로드된 이미지")
                     elif uploaded_file.type == "text/plain":
                         content = uploaded_file.read().decode('utf-8')
                         st.session_state.pending_file_contents.append(f"[텍스트 내용]\n{content}")
@@ -147,7 +152,7 @@ if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
             st.session_state.conversation_history.append({"role": "user", "content": content})
         st.session_state.pending_file_contents = []  # 처리 후 초기화
         st.session_state.show_file_uploader = False  # 파일 업로더 숨기기
-        st.experimental_rerun()  # UI 새로고침
+        st.rerun()  # UI 새로고침
 
     # 사용자 메시지 추가
     if prompt:  # 실제 메시지가 있는 경우만 표시
@@ -157,7 +162,7 @@ if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=st.session_state.conversation_history
         )
         generated_response = response.choices[0].message.content
@@ -197,7 +202,7 @@ if prompt is not None:  # 엔터만 눌러도 처리되도록 수정
         
         # 응답 후 파일 업로더 다시 표시
         st.session_state.show_file_uploader = True
-        st.experimental_rerun()
+        st.rerun()
         
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
