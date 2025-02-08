@@ -4,6 +4,7 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
+import base64
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -27,7 +28,7 @@ if "messages" not in st.session_state:
 if "file_contents" not in st.session_state:
     st.session_state.file_contents = []
 if "processed_files" not in st.session_state:
-    st.session_state.processed_files = set()
+    st.session_state.processed_files = set()  # 처리된 파일을 추적하기 위한 세트
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
@@ -84,12 +85,14 @@ if uploaded_files:
                     failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
                     continue
 
-                # 파일 내용을 직접 읽어서 저장
+                # 파일 내용을 읽고 Base64로 인코딩
                 content = uploaded_file.read()
+                encoded_content = base64.b64encode(content).decode('utf-8')
+                
                 new_file_contents.append({
                     "name": uploaded_file.name,
                     "type": uploaded_file.type,
-                    "content": content
+                    "content": encoded_content
                 })
                 success_files.append(uploaded_file.name)
 
@@ -132,7 +135,11 @@ if prompt:
         for file in st.session_state.file_contents:
             message_content.append({
                 "type": "file",
-                "file_data": file['content']
+                "file_data": {
+                    "name": file['name'],
+                    "type": file['type'],
+                    "content": file['content']
+                }
             })
 
     messages = st.session_state.conversation_history + [
