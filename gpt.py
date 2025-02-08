@@ -4,6 +4,7 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
+import pdfplumber  # PDF 처리를 위한 라이브러리 추가
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -27,7 +28,7 @@ if "messages" not in st.session_state:
 if "file_contents" not in st.session_state:
     st.session_state.file_contents = []
 if "processed_files" not in st.session_state:
-    st.session_state.processed_files = set()  # 처리된 파일을 추적하기 위한 세트
+    st.session_state.processed_files = set()
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
@@ -71,13 +72,12 @@ if uploaded_files:
     else:
         success_files = []
         failed_files = []
-        new_file_contents = []  # 새로운 파일 내용을 저장할 리스트
+        new_file_contents = []
         
         for uploaded_file in uploaded_files:
-            # 이미 처리된 파일인지 확인
             file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
             if file_identifier in st.session_state.processed_files:
-                continue  # 이미 처리된 파일은 건너뛰기
+                continue
 
             try:
                 if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
@@ -111,6 +111,18 @@ if uploaded_files:
                         "content": content
                     })
                     success_files.append(uploaded_file.name)
+
+                elif uploaded_file.type == "application/pdf":  # PDF 파일 처리 추가
+                    with pdfplumber.open(uploaded_file) as pdf:
+                        content = ""
+                        for page in pdf.pages:
+                            content += page.extract_text() + "\n"
+                    new_file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "pdf",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
                     
                 else:
                     success_files.append(uploaded_file.name)
@@ -120,20 +132,17 @@ if uploaded_files:
                         "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
                     })
 
-                # 처리된 파일 추적
                 st.session_state.processed_files.add(file_identifier)
 
             except Exception as e:
                 failed_files.append((uploaded_file.name, str(e)))
 
-        # 새로운 파일이 있는 경우에만 메시지 표시 및 내용 업데이트
         if new_file_contents:
             if failed_files:
                 st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
             if success_files:
                 st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
             
-            # 새로운 파일 내용으로 업데이트
             st.session_state.file_contents = new_file_contents
 
 # 사용자 입력
