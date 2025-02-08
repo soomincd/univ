@@ -166,7 +166,7 @@ if prompt:
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4oㄴㄴ",
             messages=st.session_state.conversation_history
         )
         generated_response = response.choices[0].message.content
