@@ -70,124 +70,42 @@ if uploaded_files:
     if len(uploaded_files) > 10:
         st.error("최대 10개의 파일을 업로드할 수 있습니다.")
     else:
-        success_files = []
-        failed_files = []
-        new_file_contents = []
-        
         for uploaded_file in uploaded_files:
             file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
-            if file_identifier in st.session_state.processed_files:
-                continue
-
-            try:
-                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
-                    failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
-                    continue
-
-                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                    df = pd.read_excel(uploaded_file, engine='openpyxl')
-                    content = df.to_csv(index=False)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "excel",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "image/png":
-                    image = Image.open(uploaded_file)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "image",
-                        "content": "이미지 파일이 처리되었습니다."
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "text/plain":
-                    content = uploaded_file.read().decode('utf-8')
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "text",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-
-                elif uploaded_file.type == "application/pdf":  # PDF 파일 처리 추가
-                    with pdfplumber.open(uploaded_file) as pdf:
-                        content = ""
-                        for page in pdf.pages:
-                            content += page.extract_text() + "\n"
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "pdf",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                else:
-                    success_files.append(uploaded_file.name)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "other",
-                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
-                    })
-
-                st.session_state.processed_files.add(file_identifier)
-
-            except Exception as e:
-                failed_files.append((uploaded_file.name, str(e)))
-
-        if new_file_contents:
-            if failed_files:
-                st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
-            if success_files:
-                st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
-            
-            # 이전 PDF 내용을 히스토리에서 제거
-            filtered_history = [
-                msg for msg in st.session_state.conversation_history 
-                if not msg.get('content', '').startswith('PDF Content from')
-            ]
-            st.session_state.conversation_history = filtered_history
-            
-            # 새로운 PDF 내용을 히스토리에 추가
-            for file in new_file_contents:
-                if file['type'] == 'pdf':
-                    st.session_state.conversation_history.append({
-                        "role": "system",
-                        "content": f"PDF Content from {file['name']}:\n{file['content']}"
-                    })
-            
-            st.session_state.file_contents = new_file_contents
-            
-            # 파일 업로드 컴포넌트 초기화
-            st.session_state.uploaded_files = None
-            st.rerun()
+            if file_identifier not in st.session_state.processed_files:
+                try:
+                    if uploaded_file.type == "application/pdf":
+                        with pdfplumber.open(uploaded_file) as pdf:
+                            content = ""
+                            for page in pdf.pages:
+                                content += page.extract_text() + "\n"
+                            
+                            # PDF 내용을 conversation_history에 텍스트로 저장
+                            st.session_state.conversation_history.append({
+                                "role": "system",
+                                "content": f"PDF Content from {uploaded_file.name}:\n{content}"
+                            })
+                            
+                            st.session_state.processed_files.add(file_identifier)
+                            st.success(f"파일이 처리되었습니다: {uploaded_file.name}")
+                            
+                except Exception as e:
+                    st.error(f"파일 처리 중 오류가 발생했습니다: {str(e)}")
+        
+        # 파일 컨텐츠 초기화
+        st.session_state.file_contents = []
+        # UI 초기화
+        st.rerun()
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 메시지와 파일 정보를 함께 표시
-    file_info = ""
-    if st.session_state.file_contents:
-        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
-        file_info = "\n".join(files_list)
-        display_message = f"{prompt}\n\n{file_info}"
-    else:
-        display_message = prompt
-
-    st.session_state.messages.append({"role": "user", "content": display_message})
+    # 메시지 표시
+    st.session_state.messages.append({"role": "user", "content": prompt})
     
     # OpenAI에 보낼 메시지 준비
-    if st.session_state.file_contents:
-        combined_content = "\n\n".join([
-            f"[File: {file['name']}]\n{file['content']}"
-            for file in st.session_state.file_contents
-        ])
-        full_prompt = f"Question: {prompt}\n\nAttached Files:\n{combined_content}"
-    else:
-        full_prompt = f"Question: {prompt}"
+    full_prompt = f"Question: {prompt}"
 
     # 히스토리 추가
     if len(st.session_state.conversation_history) > 1:  # 시스템 메시지 제외하고 히스토리가 있다면
@@ -195,7 +113,7 @@ if prompt:
             f"Q: {msg['content']}" if msg['role'] == 'user' else 
             f"A: {msg['content'][3:]}" if msg['role'] == 'assistant' and msg['content'].startswith('[1]') else 
             "A: Image was generated" if msg['role'] == 'assistant' else
-            f"System: {msg['content']}"  # PDF 내용 포함
+            f"{msg['content']}"  # PDF 내용 포함
             for msg in st.session_state.conversation_history[1:]
         ])
         full_prompt += f"\n\nHistory:\n{history_content}"
