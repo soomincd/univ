@@ -151,9 +151,7 @@ if uploaded_files:
                 st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
             
             st.session_state.file_contents = new_file_contents
-
-        # UI 초기화
-        st.rerun()
+            st.stop()  # rerun 대신 stop 사용
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
@@ -231,9 +229,7 @@ if prompt:
         st.session_state.conversation_history.append({"role": "assistant", "content": generated_response})
         
         st.session_state.file_contents = []
-        
-        # 화면 새로고침
-        st.rerun()
+        st.stop()  # rerun 대신 stop 사용
         
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
