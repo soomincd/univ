@@ -4,7 +4,6 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
-import base64
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -72,29 +71,54 @@ if uploaded_files:
     else:
         success_files = []
         failed_files = []
-        new_file_contents = []
+        new_file_contents = []  # 새로운 파일 내용을 저장할 리스트
         
         for uploaded_file in uploaded_files:
             # 이미 처리된 파일인지 확인
             file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
             if file_identifier in st.session_state.processed_files:
-                continue
+                continue  # 이미 처리된 파일은 건너뛰기
 
             try:
                 if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
                     failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
                     continue
 
-                # 파일 내용을 읽고 Base64로 인코딩
-                content = uploaded_file.read()
-                encoded_content = base64.b64encode(content).decode('utf-8')
-                
-                new_file_contents.append({
-                    "name": uploaded_file.name,
-                    "type": uploaded_file.type,
-                    "content": encoded_content
-                })
-                success_files.append(uploaded_file.name)
+                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    content = df.to_csv(index=False)
+                    new_file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "excel",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "image/png":
+                    image = Image.open(uploaded_file)
+                    new_file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "image",
+                        "content": "이미지 파일이 처리되었습니다."
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "text/plain":
+                    content = uploaded_file.read().decode('utf-8')
+                    new_file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "text",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                else:
+                    success_files.append(uploaded_file.name)
+                    new_file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "other",
+                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
+                    })
 
                 # 처리된 파일 추적
                 st.session_state.processed_files.add(file_identifier)
@@ -116,40 +140,34 @@ if uploaded_files:
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # OpenAI에 보낼 메시지 준비
-    messages = list(st.session_state.conversation_history)  # 기존 대화 기록 복사
-    
+    # 메시지와 파일 정보를 함께 표시
+    file_info = ""
     if st.session_state.file_contents:
-        # 파일 데이터를 포함한 메시지 구성
-        current_message = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt}
-            ]
-        }
-        
-        # 각 파일을 메시지에 추가
-        for file in st.session_state.file_contents:
-            current_message["content"].append({
-                "type": "file",
-                "file": file['content'],  # Base64로 인코딩된 파일 내용
-                "name": file['name'],
-                "mime_type": file['type']
-            })
-            
-        messages.append(current_message)
+        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
+        file_info = "\n".join(files_list)
+        display_message = f"{prompt}\n\n{file_info}"
     else:
-        # 파일이 없는 경우 일반 텍스트 메시지만 추가
-        messages.append({
-            "role": "user",
-            "content": prompt
-        })
+        display_message = prompt
+
+    st.session_state.messages.append({"role": "user", "content": display_message})
     
-    # API 요청
+    # OpenAI에 보낼 메시지 준비
+    if st.session_state.file_contents:
+        combined_content = "\n\n".join([
+            f"[파일: {file['name']}]\n{file['content']}"
+            for file in st.session_state.file_contents
+        ])
+        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
+    else:
+        full_prompt = prompt
+
+    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
+    
+    # OpenAI API 요청
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=messages
+            messages=st.session_state.conversation_history
         )
         generated_response = response.choices[0].message.content
 
