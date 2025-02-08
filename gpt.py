@@ -27,7 +27,7 @@ if "messages" not in st.session_state:
 if "file_contents" not in st.session_state:
     st.session_state.file_contents = []
 if "processed_files" not in st.session_state:
-    st.session_state.processed_files = set()  # 처리된 파일을 추적하기 위한 세트
+    st.session_state.processed_files = set()
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
@@ -71,54 +71,27 @@ if uploaded_files:
     else:
         success_files = []
         failed_files = []
-        new_file_contents = []  # 새로운 파일 내용을 저장할 리스트
+        new_file_contents = []
         
         for uploaded_file in uploaded_files:
             # 이미 처리된 파일인지 확인
             file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
             if file_identifier in st.session_state.processed_files:
-                continue  # 이미 처리된 파일은 건너뛰기
+                continue
 
             try:
                 if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
                     failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
                     continue
 
-                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                    df = pd.read_excel(uploaded_file, engine='openpyxl')
-                    content = df.to_csv(index=False)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "excel",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "image/png":
-                    image = Image.open(uploaded_file)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "image",
-                        "content": "이미지 파일이 처리되었습니다."
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                elif uploaded_file.type == "text/plain":
-                    content = uploaded_file.read().decode('utf-8')
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "text",
-                        "content": content
-                    })
-                    success_files.append(uploaded_file.name)
-                    
-                else:
-                    success_files.append(uploaded_file.name)
-                    new_file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "other",
-                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
-                    })
+                # 파일 내용을 직접 읽어서 저장
+                content = uploaded_file.read()
+                new_file_contents.append({
+                    "name": uploaded_file.name,
+                    "type": uploaded_file.type,
+                    "content": content
+                })
+                success_files.append(uploaded_file.name)
 
                 # 처리된 파일 추적
                 st.session_state.processed_files.add(file_identifier)
@@ -152,22 +125,25 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": display_message})
     
     # OpenAI에 보낼 메시지 준비
+    message_content = []
+    message_content.append({"type": "text", "text": prompt})
+    
     if st.session_state.file_contents:
-        combined_content = "\n\n".join([
-            f"[파일: {file['name']}]\n{file['content']}"
-            for file in st.session_state.file_contents
-        ])
-        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
-    else:
-        full_prompt = prompt
+        for file in st.session_state.file_contents:
+            message_content.append({
+                "type": "file",
+                "file_data": file['content']
+            })
 
-    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
+    messages = st.session_state.conversation_history + [
+        {"role": "user", "content": message_content}
+    ]
     
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=st.session_state.conversation_history
+            messages=messages
         )
         generated_response = response.choices[0].message.content
 
