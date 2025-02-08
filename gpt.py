@@ -4,39 +4,10 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
-import base64
-import io
-import PyPDF2
-import PyPDF2
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=api_key)
-
-def encode_image_to_base64(image):
-    """이미지를 base64로 인코딩"""
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
-
-def extract_text_from_pdf(pdf_file):
-    """PDF에서 텍스트 추출"""
-    try:
-        # PDF 파일을 읽기 모드로 열기
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        text = ""
-        
-        # 모든 페이지의 텍스트 추출
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-            
-        return {
-            "text": text,
-            "images": []  # PyPDF2는 이미지 추출을 지원하지 않습니다
-        }
-    except Exception as e:
-        st.error(f"PDF 처리 중 오류 발생: {str(e)}")
-        return None
 
 # 페이지 설정
 st.set_page_config(
@@ -56,142 +27,183 @@ if "messages" not in st.session_state:
 if "file_contents" not in st.session_state:
     st.session_state.file_contents = []
 if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = []
-    # 기본 시스템 메시지 설정
-    st.session_state.system_message = {
-        "role": "system",
-        "content": "You are a helpful assistant that can analyze both text and images. When responding to queries, provide clear and detailed observations."
-    }
+    st.session_state.conversation_history = [
+        {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
+    ]
 
-# 파일 업로드 처리
+# 파일 아이콘 스타일 정의
+st.markdown("""
+    <style>
+        .file-icon {
+            display: inline-flex;
+            align-items: center;
+            background-color: #f0f2f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px 0;
+        }
+        .file-icon i {
+            margin-right: 6px;
+        }
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        .file-list {
+            margin-top: 8px;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# 파일 업로드 컴포넌트
 uploaded_files = st.file_uploader(
     "Drag and drop files here",
-    type=["txt", "pdf", "xlsx", "xls", "png", "jpg", "jpeg"],
+    type=["txt", "pdf", "xlsx", "xls", "png", "pptx", "ppt"],
     accept_multiple_files=True,
-    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, JPG, JPEG"
+    help="Limit 200MB per file • TXT, PDF, XLSX, XLS, PNG, PPTX, PPT"
 )
 
+# 파일 처리 로직
 if uploaded_files:
-    for uploaded_file in uploaded_files:
-        try:
-            if uploaded_file.type in ["image/png", "image/jpeg"]:
-                # 이미지 처리
-                image = Image.open(uploaded_file)
-                encoded_image = encode_image_to_base64(image)
-                st.session_state.file_contents.append({
-                    "name": uploaded_file.name,
-                    "type": "image",
-                    "content": encoded_image
-                })
-                st.image(image, caption=uploaded_file.name)
-                
-            elif uploaded_file.type == "application/pdf":
-                # PDF 파일을 직접 GPT-4o에게 전달
-                file_content = uploaded_file.read()
-                encoded_content = base64.b64encode(file_content).decode('utf-8')
-                
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"이 PDF 파일의 내용을 분석해주세요: {uploaded_file.name}"
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": f"data:application/pdf;base64,{encoded_content}"
-                        }
-                    ]
-                })
-                st.success(f"PDF 파일 '{uploaded_file.name}' 업로드 완료")
-                    
-            elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-                # Excel 처리
-                df = pd.read_excel(uploaded_file)
-                content = df.to_csv(index=False)
-                st.session_state.file_contents.append({
-                    "name": uploaded_file.name,
-                    "type": "excel",
-                    "content": content
-                })
-                st.success(f"Excel 파일 '{uploaded_file.name}' 처리 완료")
-                
-            elif uploaded_file.type == "text/plain":
-                # 텍스트 파일 처리
-                content = uploaded_file.read().decode('utf-8')
-                st.session_state.file_contents.append({
-                    "name": uploaded_file.name,
-                    "type": "text",
-                    "content": content
-                })
-                st.success(f"텍스트 파일 '{uploaded_file.name}' 처리 완료")
-                
-        except Exception as e:
-            st.error(f"파일 '{uploaded_file.name}' 처리 중 오류 발생: {str(e)}")
+    if len(uploaded_files) > 10:
+        st.error("최대 10개의 파일을 업로드할 수 있습니다.")
+    else:
+        success_files = []
+        failed_files = []
+        file_contents = []
+        
+        for uploaded_file in uploaded_files:
+            try:
+                if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
+                    failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
+                    continue
 
-# 챗봇 입력 및 응답
+                if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    content = df.to_csv(index=False)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "excel",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "image/png":
+                    image = Image.open(uploaded_file)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "image",
+                        "content": "이미지 파일이 처리되었습니다."
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                elif uploaded_file.type == "text/plain":
+                    content = uploaded_file.read().decode('utf-8')
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "text",
+                        "content": content
+                    })
+                    success_files.append(uploaded_file.name)
+                    
+                else:
+                    success_files.append(uploaded_file.name)
+                    file_contents.append({
+                        "name": uploaded_file.name,
+                        "type": "other",
+                        "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
+                    })
+
+            except Exception as e:
+                failed_files.append((uploaded_file.name, str(e)))
+
+        # 결과 메시지 표시
+        if failed_files:
+            st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
+        if success_files:
+            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
+
+        # 파일 내용을 conversation history에 추가
+        if file_contents:
+            files_markdown = "\n".join([
+                f"📎 {file['name']}" for file in file_contents
+            ])
+            st.session_state.file_contents = file_contents
+
+# 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 사용자 메시지 표시
-    st.chat_message("user").write(prompt)
-    
-    # GPT에 전송할 메시지 준비
-    messages = st.session_state.conversation_history.copy()
-    
-    # 파일 내용 추가
+    # 메시지와 파일 정보를 함께 표시
+    file_info = ""
     if st.session_state.file_contents:
-        for file in st.session_state.file_contents:
-            if file["type"] == "image":
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"Analyzing image: {file['name']}"},
-                        {"type": "image_url", "image_url": f"data:image/png;base64,{file['content']}"}
-                    ]
-                })
-            elif file["type"] == "pdf":
-                messages.append({
-                    "role": "user",
-                    "content": f"PDF content from {file['name']}:\n{file['content']}"
-                })
-                # PDF에서 추출된 이미지가 있다면 추가
-                for i, img in enumerate(file.get("images", [])):
-                    messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"Image {i+1} from PDF {file['name']}:"},
-                            {"type": "image_url", "image_url": f"data:image/png;base64,{img}"}
-                        ]
-                    })
-            else:
-                messages.append({
-                    "role": "user",
-                    "content": f"Content from {file['name']}:\n{file['content']}"
-                })
+        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
+        file_info = "\n".join(files_list)
+        display_message = f"{prompt}\n\n{file_info}"
+    else:
+        display_message = prompt
+
+    st.session_state.messages.append({"role": "user", "content": display_message})
     
-    messages.append({"role": "user", "content": prompt})
+    # OpenAI에 보낼 메시지 준비
+    if st.session_state.file_contents:
+        combined_content = "\n\n".join([
+            f"[파일: {file['name']}]\n{file['content']}"
+            for file in st.session_state.file_contents
+        ])
+        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
+    else:
+        full_prompt = prompt
+
+    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
     
+    # OpenAI API 요청
     try:
-        # GPT API 호출
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[st.session_state.system_message] + st.session_state.conversation_history + messages,
-            max_tokens=4096
+            messages=st.session_state.conversation_history
         )
+        generated_response = response.choices[0].message.content
+
+        # [0]/[1] 응답 처리
+        if generated_response.startswith('[0]'):
+            # DALL-E 3로 이미지 생성
+            image_response = client.images.generate(
+                model="dall-e-3",
+                prompt=prompt,
+                size="1024x1024",
+                quality="standard",
+                n=1,
+            )
+            
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": image_response.data[0].url,
+                "type": "image"
+            })
+            
+        elif generated_response.startswith('[1]'):
+            clean_response = generated_response[3:].strip()
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": clean_response,
+                "type": "text"
+            })
         
-        # 응답 표시
-        response_content = response.choices[0].message.content
-        st.chat_message("assistant").write(response_content)
-        
-        # 대화 기록 업데이트
-        st.session_state.conversation_history.extend([
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": response_content}
-        ])
+        st.session_state.conversation_history.append({
+            "role": "assistant",
+            "content": generated_response
+        })
         
         # 파일 내용 초기화
         st.session_state.file_contents = []
         
     except Exception as e:
-        st.error(f"GPT 응답 처리 중 오류 발생: {str(e)}")
+        st.error(f"오류가 발생했습니다: {str(e)}")
+
+# 대화 표시
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        if message.get("type") == "image":
+            st.image(message["content"])
+        else:
+            st.markdown(message["content"])
