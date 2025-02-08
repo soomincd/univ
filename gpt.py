@@ -18,7 +18,7 @@ st.set_page_config(
 # 페이지 설명
 st.markdown("""
     <h2 style="color: black; text-align: center;"> Chat GPT </h2>
-    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o 버전을 사용하고 있습니다. </p>
+    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
 
 # 세션 초기화
@@ -26,6 +26,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "file_contents" not in st.session_state:
     st.session_state.file_contents = []
+if "processed_files" not in st.session_state:
+    st.session_state.processed_files = set()  # 처리된 파일을 추적하기 위한 세트
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = [
         {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."}
@@ -69,9 +71,14 @@ if uploaded_files:
     else:
         success_files = []
         failed_files = []
-        file_contents = []
+        new_file_contents = []  # 새로운 파일 내용을 저장할 리스트
         
         for uploaded_file in uploaded_files:
+            # 이미 처리된 파일인지 확인
+            file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
+            if file_identifier in st.session_state.processed_files:
+                continue  # 이미 처리된 파일은 건너뛰기
+
             try:
                 if uploaded_file.size > 200 * 1024 * 1024:  # 200MB 제한
                     failed_files.append((uploaded_file.name, "파일 크기가 200MB를 초과합니다."))
@@ -80,7 +87,7 @@ if uploaded_files:
                 if uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                     df = pd.read_excel(uploaded_file, engine='openpyxl')
                     content = df.to_csv(index=False)
-                    file_contents.append({
+                    new_file_contents.append({
                         "name": uploaded_file.name,
                         "type": "excel",
                         "content": content
@@ -89,7 +96,7 @@ if uploaded_files:
                     
                 elif uploaded_file.type == "image/png":
                     image = Image.open(uploaded_file)
-                    file_contents.append({
+                    new_file_contents.append({
                         "name": uploaded_file.name,
                         "type": "image",
                         "content": "이미지 파일이 처리되었습니다."
@@ -98,7 +105,7 @@ if uploaded_files:
                     
                 elif uploaded_file.type == "text/plain":
                     content = uploaded_file.read().decode('utf-8')
-                    file_contents.append({
+                    new_file_contents.append({
                         "name": uploaded_file.name,
                         "type": "text",
                         "content": content
@@ -107,27 +114,27 @@ if uploaded_files:
                     
                 else:
                     success_files.append(uploaded_file.name)
-                    file_contents.append({
+                    new_file_contents.append({
                         "name": uploaded_file.name,
                         "type": "other",
                         "content": f"{uploaded_file.type} 파일이 업로드되었습니다."
                     })
 
+                # 처리된 파일 추적
+                st.session_state.processed_files.add(file_identifier)
+
             except Exception as e:
                 failed_files.append((uploaded_file.name, str(e)))
 
-        # 결과 메시지 표시
-        if failed_files:
-            st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
-        if success_files:
-            st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
-
-        # 파일 내용을 conversation history에 추가
-        if file_contents:
-            files_markdown = "\n".join([
-                f"📎 {file['name']}" for file in file_contents
-            ])
-            st.session_state.file_contents = file_contents
+        # 새로운 파일이 있는 경우에만 메시지 표시 및 내용 업데이트
+        if new_file_contents:
+            if failed_files:
+                st.error(f"다음 파일의 처리가 실패했습니다: {', '.join(name for name, _ in failed_files)}")
+            if success_files:
+                st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
+            
+            # 새로운 파일 내용으로 업데이트
+            st.session_state.file_contents = new_file_contents
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
@@ -159,7 +166,7 @@ if prompt:
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=st.session_state.conversation_history
         )
         generated_response = response.choices[0].message.content
@@ -196,6 +203,9 @@ if prompt:
         
         # 파일 내용 초기화
         st.session_state.file_contents = []
+        
+        # 화면 새로고침
+        st.rerun()
         
     except Exception as e:
         st.error(f"오류가 발생했습니다: {str(e)}")
