@@ -58,8 +58,8 @@ if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = []
     # 기본 시스템 메시지 설정
     st.session_state.system_message = {
-        "gpt4": {"role": "system", "content": "You are a helpful assistant focused on providing clear and accurate responses."},
-        "vision": {"role": "system", "content": "You are a helpful assistant that can analyze both text and images. When responding to image-related queries, provide detailed observations."}
+        "role": "system",
+        "content": "You are a helpful assistant that can analyze both text and images. When responding to queries, provide clear and detailed observations."
     }
 
 # 파일 업로드 처리
@@ -164,18 +164,10 @@ if prompt:
     messages.append({"role": "user", "content": prompt})
     
     try:
-        # 파일 존재 여부에 따라 모델 선택
-        use_vision = any(file["type"] in ["image", "pdf"] for file in st.session_state.file_contents)
-        
-        # 현재 대화 기록에 적절한 시스템 메시지 추가
-        current_messages = [
-            st.session_state.system_message["vision"] if use_vision else st.session_state.system_message["gpt4"]
-        ] + st.session_state.conversation_history + messages
-        
         # GPT API 호출
         response = client.chat.completions.create(
-            model="gpt-4-vision" if use_vision else "gpt-4o-mini",
-            messages=current_messages,
+            model="gpt-4o",
+            messages=[st.session_state.system_message] + st.session_state.conversation_history + messages,
             max_tokens=4096
         )
         
