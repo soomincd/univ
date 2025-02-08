@@ -170,13 +170,21 @@ if prompt:
     else:
         full_prompt = prompt
 
-    st.session_state.conversation_history.append({"role": "user", "content": full_prompt})
+    # 새 메시지를 먼저 보내고 히스토리는 뒤에 추가
+    current_messages = [
+        {"role": "system", "content": "When responding, if the user wants an image to be drawn, write [0] and nothing else. If they want a text conversation without images, write [1] followed by a newline and then your response."},
+        {"role": "user", "content": full_prompt}
+    ]
+    
+    # 히스토리가 있으면 뒤에 추가 (system 메시지는 제외)
+    if len(st.session_state.conversation_history) > 1:
+        current_messages.extend(st.session_state.conversation_history[1:])
     
     # OpenAI API 요청
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=st.session_state.conversation_history
+            messages=current_messages
         )
         generated_response = response.choices[0].message.content
 
@@ -205,10 +213,10 @@ if prompt:
                 "type": "text"
             })
         
-        st.session_state.conversation_history.append({
-            "role": "assistant",
-            "content": generated_response
-        })
+        # conversation_history 업데이트
+        st.session_state.conversation_history = current_messages + [
+            {"role": "assistant", "content": generated_response}
+        ]
         
         # 파일 내용 초기화
         st.session_state.file_contents = []
