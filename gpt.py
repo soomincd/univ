@@ -5,8 +5,8 @@ import pandas as pd
 import io
 from PIL import Image
 import base64
-import pdfplumber
 import io
+import PyPDF2
 import PyPDF2
 
 # API 클라이언트 설정
@@ -86,23 +86,24 @@ if uploaded_files:
                 st.image(image, caption=uploaded_file.name)
                 
             elif uploaded_file.type == "application/pdf":
-                # PDF 파일을 이미지로 변환
-                pdf_images = convert_pdf_to_images(uploaded_file)
-                if pdf_images:
-                    for idx, img_base64 in enumerate(pdf_images):
-                        messages.append({
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"PDF 페이지 {idx+1}의 내용을 분석해주세요:"
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": f"data:image/png;base64,{img_base64}"
-                                }
-                            ]
-                        })
+                # PDF 파일을 직접 GPT-4o에게 전달
+                file_content = uploaded_file.read()
+                encoded_content = base64.b64encode(file_content).decode('utf-8')
+                
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"이 PDF 파일의 내용을 분석해주세요: {uploaded_file.name}"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": f"data:application/pdf;base64,{encoded_content}"
+                        }
+                    ]
+                })
+                st.success(f"PDF 파일 '{uploaded_file.name}' 업로드 완료")
                     
             elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                 # Excel 처리
