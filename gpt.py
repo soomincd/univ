@@ -4,7 +4,7 @@ from openai import OpenAI
 import pandas as pd
 import io
 from PIL import Image
-import pdfplumber  # PDF 처리를 위한 라이브러리 추가
+import pdfplumber
 
 # API 클라이언트 설정
 api_key = st.secrets["OPENAI_API_KEY"]
@@ -143,7 +143,26 @@ if uploaded_files:
             if success_files:
                 st.success(f"파일 업로드가 완료되었습니다: {', '.join(success_files)}")
             
+            # 이전 PDF 내용을 히스토리에서 제거
+            filtered_history = [
+                msg for msg in st.session_state.conversation_history 
+                if not msg.get('content', '').startswith('PDF Content from')
+            ]
+            st.session_state.conversation_history = filtered_history
+            
+            # 새로운 PDF 내용을 히스토리에 추가
+            for file in new_file_contents:
+                if file['type'] == 'pdf':
+                    st.session_state.conversation_history.append({
+                        "role": "system",
+                        "content": f"PDF Content from {file['name']}:\n{file['content']}"
+                    })
+            
             st.session_state.file_contents = new_file_contents
+            
+            # 파일 업로드 컴포넌트 초기화
+            st.session_state.uploaded_files = None
+            st.rerun()
 
 # 사용자 입력
 prompt = st.chat_input("메시지 ChatGPT")
@@ -163,17 +182,20 @@ if prompt:
     # OpenAI에 보낼 메시지 준비
     if st.session_state.file_contents:
         combined_content = "\n\n".join([
-            f"[파일: {file['name']}]\n{file['content']}"
+            f"[File: {file['name']}]\n{file['content']}"
             for file in st.session_state.file_contents
         ])
-        full_prompt = f"{prompt}\n\n첨부된 파일 내용:\n{combined_content}"
+        full_prompt = f"Question: {prompt}\n\nAttached Files:\n{combined_content}"
     else:
-        full_prompt = prompt
+        full_prompt = f"Question: {prompt}"
 
     # 히스토리 추가
     if len(st.session_state.conversation_history) > 1:  # 시스템 메시지 제외하고 히스토리가 있다면
         history_content = "\n".join([
-            f"Q: {msg['content']}" if msg['role'] == 'user' else f"A: {msg['content'][3:]}" if msg['content'].startswith('[1]') else "A: Image was generated"
+            f"Q: {msg['content']}" if msg['role'] == 'user' else 
+            f"A: {msg['content'][3:]}" if msg['role'] == 'assistant' and msg['content'].startswith('[1]') else 
+            "A: Image was generated" if msg['role'] == 'assistant' else
+            f"System: {msg['content']}"  # PDF 내용 포함
             for msg in st.session_state.conversation_history[1:]
         ])
         full_prompt += f"\n\nHistory:\n{history_content}"
@@ -216,9 +238,6 @@ if prompt:
         
         st.session_state.conversation_history.append({"role": "user", "content": prompt})
         st.session_state.conversation_history.append({"role": "assistant", "content": generated_response})
-        
-        # 파일 내용 초기화
-        st.session_state.file_contents = []
         
         # 화면 새로고침
         st.rerun()
