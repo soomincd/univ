@@ -116,37 +116,36 @@ if uploaded_files:
 prompt = st.chat_input("메시지 ChatGPT")
 
 if prompt:
-    # 메시지와 파일 정보를 함께 표시
-    file_info = ""
-    if st.session_state.file_contents:
-        files_list = [f"📎 {file['name']}" for file in st.session_state.file_contents]
-        file_info = "\n".join(files_list)
-        display_message = f"{prompt}\n\n{file_info}"
-    else:
-        display_message = prompt
-
-    st.session_state.messages.append({"role": "user", "content": display_message})
-    
     # OpenAI에 보낼 메시지 준비
-    message_content = []
-    message_content.append({"type": "text", "text": prompt})
+    messages = list(st.session_state.conversation_history)  # 기존 대화 기록 복사
     
     if st.session_state.file_contents:
+        # 파일 데이터를 포함한 메시지 구성
+        current_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt}
+            ]
+        }
+        
+        # 각 파일을 메시지에 추가
         for file in st.session_state.file_contents:
-            message_content.append({
+            current_message["content"].append({
                 "type": "file",
-                "file_data": {
-                    "name": file['name'],
-                    "type": file['type'],
-                    "content": file['content']
-                }
+                "file": file['content'],  # Base64로 인코딩된 파일 내용
+                "name": file['name'],
+                "mime_type": file['type']
             })
-
-    messages = st.session_state.conversation_history + [
-        {"role": "user", "content": message_content}
-    ]
+            
+        messages.append(current_message)
+    else:
+        # 파일이 없는 경우 일반 텍스트 메시지만 추가
+        messages.append({
+            "role": "user",
+            "content": prompt
+        })
     
-    # OpenAI API 요청
+    # API 요청
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
