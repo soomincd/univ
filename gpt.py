@@ -5,7 +5,8 @@ import pandas as pd
 import io
 from PIL import Image
 import base64
-import PyPDF2
+import pdfplumber
+import io
 import PyPDF2
 
 # API 클라이언트 설정
@@ -85,16 +86,23 @@ if uploaded_files:
                 st.image(image, caption=uploaded_file.name)
                 
             elif uploaded_file.type == "application/pdf":
-                # PDF 처리
-                pdf_content = extract_text_from_pdf(uploaded_file)
-                if pdf_content:
-                    st.session_state.file_contents.append({
-                        "name": uploaded_file.name,
-                        "type": "pdf",
-                        "content": pdf_content["text"],
-                        "images": pdf_content["images"]
-                    })
-                    st.success(f"PDF 파일 '{uploaded_file.name}' 처리 완료")
+                # PDF 파일을 이미지로 변환
+                pdf_images = convert_pdf_to_images(uploaded_file)
+                if pdf_images:
+                    for idx, img_base64 in enumerate(pdf_images):
+                        messages.append({
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"PDF 페이지 {idx+1}의 내용을 분석해주세요:"
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": f"data:image/png;base64,{img_base64}"
+                                }
+                            ]
+                        })
                     
             elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
                 # Excel 처리
