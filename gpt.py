@@ -19,7 +19,7 @@ st.set_page_config(
 # 페이지 설명
 st.markdown("""
     <h2 style="color: black; text-align: center;"> Chat GPT </h2>
-    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o-mini 버전을 사용하고 있습니다. </p>
+    <p style="text-align: justify; text-align: center"> 이 페이지는 ChatGPT-4o버전을 사용하고 있습니다. </p>
 """, unsafe_allow_html=True)
 
 # 세션 초기화
